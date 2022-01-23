@@ -24,10 +24,12 @@ def generate_pin(digits):
 
 
 def generate_session_key(chars):
-    key = ""
+    key = "None"
 
-    for k in range(chars):
-        key += chr(random.randint(32, 126))
+    while key == "None":
+        key = ""
+        for k in range(chars):
+            key += chr(random.randint(32, 126))
 
     return key
 
