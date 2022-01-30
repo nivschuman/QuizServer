@@ -230,11 +230,10 @@ def publish_quiz():
 
 
 # get pin of quiz and return whether a quiz with that pin exists and was published
-@app.route("/enterPin/quizExists", methods=["POST"])
+@app.route("/enterPin/quizExists", methods=["GET"])
 def quiz_exists():
-    response = request.get_json()
-
-    pin = response["pin"]
+    data = json.loads(request.args.get("data"))
+    pin = data["pin"]
 
     quiz = Quiz.query.filter_by(pin=pin).first()
 
@@ -247,9 +246,8 @@ def quiz_exists():
 # get pin and return a published quiz with that pin
 @app.route("/play/getQuiz", methods=["POST"])
 def get_quiz():
-    response = request.get_json()
-
-    pin = response["pin"]
+    data = json.loads(request.args.get("data"))
+    pin = data["pin"]
 
     quiz = Quiz.query.filter_by(pin=pin).first()
 
