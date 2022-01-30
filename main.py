@@ -1,10 +1,11 @@
-from flask import Flask, url_for, request, json
+from flask import Flask, url_for, request, json, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import random
 
 
 app = Flask(__name__)
+app.secret_key = "alon"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 CORS(app)
@@ -22,18 +23,28 @@ def generate_pin(digits):
     return pin
 
 
-# todo make user work
+def generate_session_key(chars):
+    key = "None"
+
+    while key == "None":
+        key = ""
+        for k in range(chars):
+            key += chr(random.randint(32, 126))
+
+    return key
+
+
 class User(db.Model):
     __tablename__ = "user"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
-    quizzes_done = db.Column(db.Integer)
-    correct_answers = db.Column(db.Integer)
+    quizzes_done = db.Column(db.Integer, default=0)
+    correct_answers = db.Column(db.Integer, default=0)
 
     # relationship with Quiz
-    # quizzes = db.relationship("Quiz", backref="author", lazy=True, cascade="all, delete-orphan")
+    quizzes = db.relationship("Quiz", backref="author", lazy=True, cascade="all, delete-orphan")
 
 
 class Quiz(db.Model):
@@ -45,7 +56,7 @@ class Quiz(db.Model):
     published = db.Column(db.Boolean, default=False, nullable=False)
 
     # connection with user
-    # user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
     # relationship with ChoiceQuestion
     choice_questions = db.relationship("ChoiceQuestion", backref="author", lazy=True, cascade="all, delete-orphan")
@@ -108,6 +119,45 @@ class Choice(db.Model):
 
     def get_json(self):
         return {"id": self.id, "text": self.text, "correct": self.correct}
+
+
+# create a new user. Return true if created, false otherwise
+@app.route("/user/signup", methods=["POST"])
+def sign_up():
+    response = request.get_json()
+
+    username = response["username"]
+    password = response["password"]  # todo encryption
+
+    user = User.query.filter_by(username=username).first()
+
+    if user is not None:
+        return {"created", "false"}
+
+    new_user = User(username=username, password=password)
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return {"created": "true"}
+
+
+@app.route("/user/login", methods=["GET"])
+def login():
+    data = json.loads(request.args.get("data"))
+    username = data["username"]
+    password = data["password"]
+
+    user = User.query.filter_by(username=username, password=password).first()
+
+    if user is None:
+        return {"key": "None"}
+
+    key = generate_session_key(8)
+
+    session["key"] = user.id
+
+    return {"key": key}
 
 
 # create a new quiz. Returns the pin.
