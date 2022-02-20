@@ -57,7 +57,7 @@ class Quiz(db.Model):
         return f"{self.name}, pin={self.pin}"
 
     def get_json(self):
-        my_json = {"id": self.id, "name": self.name, "pin": self.pin, "published": self.published, "choice_questions": []}
+        my_json = {"name": self.name, "pin": self.pin, "published": self.published, "choice_questions": []}
 
         for choice_question in self.choice_questions:
             my_json["choice_questions"].append(choice_question.get_json())
@@ -88,7 +88,7 @@ class ChoiceQuestion(db.Model):
         return string
 
     def get_json(self):
-        my_json = {"id": self.id, "number": self.number, "question": self.question, "choices": []}
+        my_json = {"number": self.number, "question": self.question, "choices": []}
 
         for choice in self.choices:
             my_json["choices"].append(choice.get_json())
@@ -110,7 +110,7 @@ class Choice(db.Model):
         return f"text={self.text}, correct={self.correct}"
 
     def get_json(self):
-        return {"id": self.id, "text": self.text, "correct": self.correct}
+        return {"text": self.text}
 
 
 # create a new user. Return true if created, false otherwise
@@ -268,6 +268,46 @@ def get_quiz():
         return {"exists": "false", "pin": pin}
 
     return quiz.get_json()
+
+
+# gets pin of quiz and what player answered. Returns number of questions he got right.
+@app.route("/play/correctAnswers", methods=["POST"])
+def correct_answers():
+    response = request.get_json()
+
+    pin = response["pin"]
+
+    quiz = Quiz.query.filter_by(pin=pin).first()
+
+    if (quiz is None) or (not quiz.published):
+        return {"error": "cannot play quiz"}
+
+    correct = 0
+
+    # go over each question sent
+    for question in response["questions"]:
+        if question["type"] == "ChoiceQuestion":
+            is_correct = True
+            # find matching question in quiz
+            number = question["number"]
+            question_text = question["question"]
+            quiz_question = ChoiceQuestion.query.filter_by(quiz_id=quiz.id, number=number, question=question_text).first()
+
+            # go over each choice in question sent
+            for choice in question["choices"]:
+                # find matching choice in question
+                text = choice["text"]
+
+                question_choice = Choice.query.filter_by(text=text, choice_question_id=quiz_question.id).first()
+
+                if choice["correct"] != question_choice.correct:
+                    is_correct = False
+                    break
+
+            if is_correct:
+                correct += 1
+
+    return {"correctAnswers": correct}
 
 
 if __name__ == "__main__":
