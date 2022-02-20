@@ -6,8 +6,11 @@ import random
 
 app = Flask(__name__)
 app.secret_key = "alon"
+
+app.config.from_object(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
 CORS(app)
 
 
@@ -21,17 +24,6 @@ def generate_pin(digits):
         pin += str(random.randint(0, 9))
 
     return pin
-
-
-def generate_session_key(chars):
-    key = "None"
-
-    while key == "None":
-        key = ""
-        for k in range(chars):
-            key += chr(random.randint(32, 126))
-
-    return key
 
 
 class User(db.Model):
@@ -142,6 +134,7 @@ def sign_up():
     return {"created": "true"}
 
 
+# try to login. Return user id if able to login
 @app.route("/user/login", methods=["GET"])
 def login():
     data = json.loads(request.args.get("data"))
@@ -151,23 +144,40 @@ def login():
     user = User.query.filter_by(username=username, password=password).first()
 
     if user is None:
-        return {"key": "None"}
+        return {"user_id": "None"}
 
-    key = generate_session_key(8)
-
-    session["key"] = user.id
-
-    return {"key": key}
+    return {"user_id": user.id}
 
 
-# create a new quiz. Returns the pin.
+# get user id. Returns stats of user with this id
+@app.route("/home/userinfo", methods=["GET"])
+def user_info():
+    user_id = json.loads(request.args.get("data"))
+
+    user = User.query.filter_by(id=user_id).first()
+
+    if user is None:
+        return {"found": "false"}
+
+    return_data = {"username": user.username,
+                   "quizzes_done": user.quizzes_done,
+                   "correct_answers": user.correct_answers,
+                   "quizzes_made": len(user.quizzes),
+                   "found": "true"
+                   }
+
+    return return_data
+
+
+# create a new quiz for user with given id. Returns the pin.
 @app.route("/create/newQuiz", methods=["GET"])
 def new_quiz():
+    user_id = json.loads(request.args.get("data"))
     pin = generate_pin(8)
     while Quiz.query.filter_by(pin=pin).first() is not None:
         pin = generate_pin(8)
 
-    quiz = Quiz(name="MyQuiz", pin=pin)
+    quiz = Quiz(name="MyQuiz", pin=pin, user_id=user_id)
 
     db.session.add(quiz)
     db.session.commit()
@@ -175,13 +185,14 @@ def new_quiz():
     return {"pin": pin}
 
 
-# get current state of quiz questions and update quiz accordingly.
+# get current state of quiz questions and update quiz accordingly for user.
 @app.route("/create/postQuestions", methods=["POST"])
 def post_questions():
-    response = request.get_json()
+    response = request.get_json()["quiz"]
+    user_id = request.get_json()["user_id"]
 
     pin = response["pin"]
-    quiz = Quiz.query.filter_by(pin=pin).first()
+    quiz = Quiz.query.filter_by(pin=pin, user_id=user_id).first()
 
     if quiz is None or quiz.published:
         return {"posted": "false"}
@@ -215,10 +226,10 @@ def post_questions():
 # publish quiz of certain pin, allowing others to play it.
 @app.route("/create/publishQuiz", methods=["POST"])
 def publish_quiz():
-    response = request.get_json()
+    pin = request.get_json()["pin"]
+    user_id = request.get_json()["user_id"]
 
-    pin = response["pin"]
-    quiz = Quiz.query.filter_by(pin=pin).first()
+    quiz = Quiz.query.filter_by(pin=pin, user_id=user_id).first()
 
     if quiz is None:
         return {"published": "false"}
@@ -230,11 +241,11 @@ def publish_quiz():
 
 
 # get pin of quiz and return whether a quiz with that pin exists and was published
-@app.route("/enterPin/quizExists", methods=["POST"])
+@app.route("/enterPin/quizExists", methods=["GET"])
 def quiz_exists():
-    response = request.get_json()
+    data = json.loads(request.args.get("data"))
 
-    pin = response["pin"]
+    pin = data["pin"]
 
     quiz = Quiz.query.filter_by(pin=pin).first()
 
@@ -245,11 +256,11 @@ def quiz_exists():
 
 
 # get pin and return a published quiz with that pin
-@app.route("/play/getQuiz", methods=["POST"])
+@app.route("/play/getQuiz", methods=["GET"])
 def get_quiz():
-    response = request.get_json()
+    data = json.loads(request.args.get("data"))
 
-    pin = response["pin"]
+    pin = data["pin"]
 
     quiz = Quiz.query.filter_by(pin=pin).first()
 
