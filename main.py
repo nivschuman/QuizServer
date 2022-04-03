@@ -2,6 +2,7 @@ from flask import Flask, url_for, request, json, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import random
+from passlib.hash import sha256_crypt
 
 
 app = Flask(__name__)
@@ -53,6 +54,9 @@ class Quiz(db.Model):
     # relationship with ChoiceQuestion
     choice_questions = db.relationship("ChoiceQuestion", backref="author", lazy=True, cascade="all, delete-orphan")
 
+    # relationship with Status
+    statuses = db.relationship("Status", backref="author", lazy=True, cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"{self.name}, pin={self.pin}"
 
@@ -63,6 +67,14 @@ class Quiz(db.Model):
             my_json["choice_questions"].append(choice_question.get_json())
 
         return my_json
+
+    def get_statuses_json(self):
+        statuses_json = []
+
+        for status in self.statuses:
+            statuses_json.append(status.get_json())
+
+        return statuses_json
 
 
 class ChoiceQuestion(db.Model):
@@ -113,20 +125,38 @@ class Choice(db.Model):
         return {"text": self.text}
 
 
+class Status(db.Model):
+    __tablename__ = "status"
+
+    id = db.Column(db.Integer, primary_key=True)
+    grade = db.Column(db.Integer)
+    amount_played = db.Column(db.Integer, default=1)
+    user_id = db.Column(db.Integer, nullable=False)
+
+    # connection to quiz
+    quiz_id = db.Column(db.Integer, db.ForeignKey("quiz.id"), nullable=False)
+
+    def get_json(self):
+        user = User.query.filter_by(id=self.user_id).first()
+        return {"username": user.username, "grade": self.grade, "amount": self.amount_played}
+
+
 # create a new user. Return true if created, false otherwise
 @app.route("/user/signup", methods=["POST"])
 def sign_up():
     response = request.get_json()
 
     username = response["username"]
-    password = response["password"]  # todo encryption
+    password = response["password"]
+
+    hashed_password = sha256_crypt.encrypt(password)
 
     user = User.query.filter_by(username=username).first()
 
     if user is not None:
         return {"created", "false"}
 
-    new_user = User(username=username, password=password)
+    new_user = User(username=username, password=hashed_password)
 
     db.session.add(new_user)
     db.session.commit()
@@ -141,9 +171,9 @@ def login():
     username = data["username"]
     password = data["password"]
 
-    user = User.query.filter_by(username=username, password=password).first()
+    user = User.query.filter_by(username=username).first()
 
-    if user is None:
+    if user is None or not sha256_crypt.verify(password, user.password):
         return {"user_id": "None"}
 
     return {"user_id": user.id}
@@ -270,10 +300,12 @@ def get_quiz():
     return quiz.get_json()
 
 
-# gets pin of quiz and what player answered. Returns number of questions he got right.
+# gets pin of quiz, user and what player answered. Returns number of questions he got right.
+# also updates user stats accordingly
 @app.route("/play/correctAnswers", methods=["POST"])
 def correct_answers():
-    response = request.get_json()
+    response = request.get_json()["quiz"]
+    user_id = request.get_json()["user_id"]
 
     pin = response["pin"]
 
@@ -307,7 +339,42 @@ def correct_answers():
             if is_correct:
                 correct += 1
 
+    user = User.query.filter_by(id=user_id).first()
+
+    grade = (correct * 100) / len(quiz.choice_questions)
+
+    # update user stats
+    user.correct_answers += correct
+    user.quizzes_done += 1
+
+    # create new status
+    status = Status.query.filter_by(user_id=user_id, quiz_id=quiz.id).first()
+
+    if status is None:
+        new_status = Status(grade=grade, user_id=user_id, quiz_id=quiz.id)
+        db.session.add(new_status)
+    else:
+        status.amount_played += 1
+        status.grade = max(grade, status.grade)
+
+    db.session.commit()
+
     return {"correctAnswers": correct}
+
+
+# gets quiz pin and returns all user statuses for that quiz
+@app.route("/leaderboard/getStatuses", methods=["GET"])
+def get_statuses():
+    data = json.loads(request.args.get("data"))
+
+    pin = data["pin"]
+
+    quiz = Quiz.query.filter_by(published=True, pin=pin).first()
+
+    if quiz is None:
+        return {"found": "false"}
+
+    return {"found": "true", "statuses": quiz.get_statuses_json()}
 
 
 if __name__ == "__main__":
