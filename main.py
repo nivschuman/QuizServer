@@ -60,19 +60,19 @@ class Quiz(db.Model):
     def __repr__(self):
         return f"{self.name}, pin={self.pin}"
 
-    def get_json(self):
+    def get_json(self, with_answers=False):
         my_json = {"name": self.name, "pin": self.pin, "published": self.published, "choice_questions": []}
 
         for choice_question in self.choice_questions:
-            my_json["choice_questions"].append(choice_question.get_json())
+            my_json["choice_questions"].append(choice_question.get_json(with_answers))
 
         return my_json
 
-    def get_statuses_json(self):
+    def get_statuses_json(self, with_answers=False):
         statuses_json = []
 
         for status in self.statuses:
-            statuses_json.append(status.get_json())
+            statuses_json.append(status.get_json(with_answers))
 
         return statuses_json
 
@@ -99,11 +99,11 @@ class ChoiceQuestion(db.Model):
 
         return string
 
-    def get_json(self):
+    def get_json(self, with_answers=False):
         my_json = {"number": self.number, "question": self.question, "choices": []}
 
         for choice in self.choices:
-            my_json["choices"].append(choice.get_json())
+            my_json["choices"].append(choice.get_json(with_answers))
 
         return my_json
 
@@ -121,8 +121,11 @@ class Choice(db.Model):
     def __repr__(self):
         return f"text={self.text}, correct={self.correct}"
 
-    def get_json(self):
-        return {"text": self.text}
+    def get_json(self, with_answers=False):
+        if not with_answers:
+            return {"text": self.text}
+        else:
+            return {"text": self.text, "correct": self.correct}
 
 
 class Status(db.Model):
@@ -154,7 +157,7 @@ def sign_up():
     user = User.query.filter_by(username=username).first()
 
     if user is not None:
-        return {"created", "false"}
+        return {"created": "false"}
 
     new_user = User(username=username, password=hashed_password)
 
@@ -375,6 +378,54 @@ def get_statuses():
         return {"found": "false"}
 
     return {"found": "true", "statuses": quiz.get_statuses_json()}
+
+
+# get list of all quizzes this user has creates and not published
+@app.route("/edit/getUserQuizzes", methods=["GET"])
+def get_user_quizzes():
+    data = json.loads(request.args.get("data"))
+
+    user = User.query.filter_by(id=data).first()
+
+    json_to_return = []
+
+    for quiz in user.quizzes:
+        if not quiz.published:
+            json_to_return.append(quiz.get_json())
+
+    return {"quizzes": json_to_return}
+
+
+# get quiz with answers for user to edit
+@app.route("/create/getQuizWithAnswers", methods=["GET"])
+def get_quiz_with_answers():
+    data = json.loads(request.args.get("data"))
+
+    user_id = data["user_id"]
+    pin = data["pin"]
+
+    quiz = Quiz.query.filter_by(user_id=user_id, pin=pin, published=False).first()
+
+    return {"quiz": quiz.get_json(True)}
+
+
+# delete quiz of certain pin created by user
+@app.route("/edit/deleteQuiz")
+def delete_quiz():
+    data = json.loads(request.args.get("data"))
+
+    user_id = data["user_id"]
+    pin = data["pin"]
+
+    quiz = Quiz.query.filter_by(user_id=user_id, pin=pin, published=False).first()
+
+    if quiz is not None:
+        db.session.remove(quiz)
+        db.session.commit()
+
+        return {"deleted": "true"}
+
+    return {"deleted": "false"}
 
 
 if __name__ == "__main__":
