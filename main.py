@@ -410,7 +410,7 @@ def get_quiz_with_answers():
 
 
 # delete quiz of certain pin created by user
-@app.route("/edit/deleteQuiz")
+@app.route("/edit/deleteQuiz", methods=["GET"])
 def delete_quiz():
     data = json.loads(request.args.get("data"))
 
@@ -420,12 +420,12 @@ def delete_quiz():
     quiz = Quiz.query.filter_by(user_id=user_id, pin=pin, published=False).first()
 
     if quiz is not None:
-        db.session.remove(quiz)
+        db.session.delete(quiz)
         db.session.commit()
 
-        return {"deleted": "true"}
+        return {"deleted": "true", "pin": pin}
 
-    return {"deleted": "false"}
+    return {"deleted": "false", "pin": pin}
 
 
 if __name__ == "__main__":
