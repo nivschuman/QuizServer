@@ -68,11 +68,11 @@ class Quiz(db.Model):
 
         return my_json
 
-    def get_statuses_json(self, with_answers=False):
+    def get_statuses_json(self):
         statuses_json = []
 
         for status in self.statuses:
-            statuses_json.append(status.get_json(with_answers))
+            statuses_json.append(status.get_json())
 
         return statuses_json
 
