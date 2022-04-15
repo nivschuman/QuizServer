@@ -390,8 +390,7 @@ def get_user_quizzes():
     json_to_return = []
 
     for quiz in user.quizzes:
-        if not quiz.published:
-            json_to_return.append(quiz.get_json())
+        json_to_return.append(quiz.get_json())
 
     return {"quizzes": json_to_return}
 
